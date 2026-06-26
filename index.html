@@ -1833,10 +1833,15 @@ function choicePanelHtml(title){
   const chatOpen=state.freeChatHistory.length?' show':'';
   const tutorUsed=state.tutorMessageCount||0;
   const tutorLimitReached=tutorUsed>=TUTOR_MESSAGE_LIMIT;
+  const tutorLeft=TUTOR_MESSAGE_LIMIT-tutorUsed;
   const freeChatHtml=`<div class="freeChatBox">
     <b>📚 Tutor chat</b>
-    <div class="small">Ask about this turn only. Good examples: <b>What does boarding pass mean?</b> · <b>Which option is safest?</b> · <b>Can I say this politely?</b></div>
-    <div class="studyStatus" style="margin-top:6px">Tutor messages used this level: <b>${tutorUsed}/${TUTOR_MESSAGE_LIMIT}</b>${tutorLimitReached?' · limit reached':''}</div>
+    <div class="small" style="margin-top:4px">Ask anything — vocabulary, strategy, grammar, or how to say something politely.</div>
+    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span id="tutorMsgPill" style="font-size:12px;font-weight:900;padding:4px 10px;border-radius:999px;background:${tutorLimitReached?'var(--redLight)':tutorLeft<=3?'var(--goldLight)':'var(--blueLight)'};color:${tutorLimitReached?'var(--red)':tutorLeft<=3?'var(--gold)':'var(--blue)'}">
+        ${tutorLimitReached?'No messages left':(tutorLeft+' message'+(tutorLeft===1?'':'s')+' left this level')}
+      </span>
+    </div>
     <div class="freeChatReply chatTranscript${chatOpen}" id="freeChatReply">${freeChatHistoryHtml()}</div>
     <textarea id="freeChatInput" placeholder="${tutorLimitReached?'Tutor limit reached for this level. Choose A, B, or C to continue.':'Ask the tutor anything about this turn...'}" onkeydown="freeChatKey(event)" ${tutorLimitReached?'disabled':''}></textarea>
     <div class="freeChatActions">
@@ -1875,6 +1880,13 @@ function refreshTutorLimitControls(){
   const box=$('freeChatInput');
   const askBtn=document.querySelector('#responses .freeChatActions button');
   const status=document.querySelector('#responses .freeChatBox .studyStatus');
+  const pill=document.getElementById('tutorMsgPill');
+  const left=TUTOR_MESSAGE_LIMIT-used;
+  if(pill){
+    pill.textContent=reached?'No messages left':(left+' message'+(left===1?'':'s')+' left this level');
+    pill.style.background=reached?'var(--redLight)':left<=3?'var(--goldLight)':'var(--blueLight)';
+    pill.style.color=reached?'var(--red)':left<=3?'var(--gold)':'var(--blue)';
+  }
   if(status)status.innerHTML=`Tutor messages used this level: <b>${used}/${TUTOR_MESSAGE_LIMIT}</b>${reached?' · limit reached':''}`;
   if(box){
     box.disabled=reached;
@@ -1902,17 +1914,13 @@ function freeChatGuardMessage(text){
   const raw=String(text||'').trim();
   const lower=raw.toLowerCase();
   if(!raw)return '';
-  if(raw.length>260)return 'Please keep chatbot questions short and connected to this turn. Choose A, B, or C, or ask about the words in this turn.';
-  if(/https?:\/\/|www\.|@[a-z0-9_]+|#[a-z0-9_]+/i.test(raw))return freeChatRedirectMessage();
-  if(/\b(bitch|bitches|fuck|shit|stupid|idiot|shut up|go away|hate you|kill|porn|sex|drug|weed|beer|gambling)\b/i.test(raw))return freeChatRedirectMessage();
-  if(/\b(weather|sports?|football|music|song|movie|game|politics|news|restaurant|pizza|homework|math|dating|girlfriend|boyfriend|joke|story|recipe|programming|code|website|youtube|instagram|tiktok|facebook|favorite color|your name|who are you)\b/.test(lower)&&!freeChatHasScenarioOverlap(raw))return freeChatRedirectMessage();
-  if(freeChatOffTopicVocabQuestion(raw))return freeChatRedirectMessage();
-  const helpWord=freeChatVocabHelpWord(raw);
-  if(helpWord&&(freeChatKnownVocabCandidate(helpWord)||freeChatHasScenarioOverlap(raw)))return '';
-  if(freeChatStrategyQuestion(raw))return '';
-  if(freeChatEnglishPracticeQuestion(raw)&&freeChatHasScenarioOverlap(raw))return '';
-  if(/\b(how do i say|can i say|could i say|is this correct|correct this|make this polite|grammar|sentence)\b/.test(lower)&&freeChatHasScenarioOverlap(raw))return '';
-  // If we can't classify it, let the AI handle it — don't block it
+  // Only block truly harmful or spam content — the AI handles everything else
+  if(/\b(bitch|bitches|fuck|shit|stupid|idiot|shut up|go away|hate you|kill|porn|sex|drug|weed|beer|gambling)\b/i.test(raw))
+    return 'Please keep the conversation respectful. What would you like to ask the tutor?';
+  if(/https?:\/\/|www\.|@[a-z0-9_]+/i.test(raw))
+    return 'Please do not share links here. Ask the tutor a question about the game instead.';
+  // Everything else — vocabulary questions, strategy, English practice, casual chat —
+  // goes straight to the AI tutor which is smart enough to handle it in context.
   return '';
 }
 function freeChatImportantWords(text){
@@ -1994,19 +2002,8 @@ async function submitFreeChat(){
   state.chatSubmitting=false;
 }
 async function freeChatReply(text){
-  // Only do a pure vocab dictionary lookup when the learner explicitly asks
-  // for a definition ("what does X mean", "translate X", etc.) AND the word
-  // they are asking about is clearly a known vocabulary item — not just any
-  // common word that happens to appear in a casual sentence.
-  const isExplicitDefRequest=/\b(what does|what is|meaning of|how do you say|define|translate)\b/i.test(text);
-  const helpWord=isExplicitDefRequest?freeChatVocabHelpWord(text):null;
-  if(helpWord&&freeChatKnownVocabCandidate(helpWord)){
-    const def=await aiDefine(helpWord);
-    return `<b>${esc(helpWord)}</b> means: ${esc(def.definition)}.<br>Vietnamese: <b>${esc(def.vietnamese||'')}</b><br>Example: ${esc(def.example||'')}<br><span class="small">In this scenario, use that meaning to choose A, B, or C.</span>`;
-  }
-  // For everything else — strategy questions, English practice questions,
-  // general conversation — let the real AI handle it directly so the tutor
-  // feels like an actual intelligent assistant.
+  // Send everything straight to the AI tutor — it handles vocab definitions,
+  // strategy questions, grammar help, and casual chat all in context.
   return await chatGptTutorReply(text);
 }
 function freeChatStrategyQuestion(text){
