@@ -31,7 +31,7 @@ const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-2.
   .filter(Boolean);
 const AI_PROVIDER = process.env.OPENAI_API_KEY ? 'openai' : process.env.GEMINI_API_KEY ? 'gemini' : 'offline';
 const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, 'study-data');
+const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'study-data');
 const EVENTS_FILE = path.join(DATA_DIR, 'word-explorer-events.jsonl');
 
 function handleStatus(req, res) {
