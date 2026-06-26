@@ -1,0 +1,14 @@
+{
+  "name": "word-explorer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Word Explorer vocabulary learning prototype",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "interpret": "node scripts/interpret-word-explorer.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
